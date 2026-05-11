@@ -1,0 +1,59 @@
+# Secrets — NEVER commit
+.env
+.env.*
+*.key
+*.pem
+*.p12
+*.pfx
+id_rsa
+id_rsa.pub
+id_ed25519
+id_ed25519.pub
+vault_token
+*_token.txt
+*_credentials*
+*_secret*
+*_password*
+
+# Runtime
+*.log
+logs/
+tmp/
+.tmp/
+
+# Build artifacts
+dist/
+build/
+bin/
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+node_modules/
+*.exe
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+data/
+pgdata/
+influxdata/
+
+# Certificates
+certs/
+ssl/
+tls/
+
+# Internal configs
+config/local.yaml
+config/prod.yaml
+inventory/
