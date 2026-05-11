@@ -1,76 +1,93 @@
-# Platform Stack
+# Platform Stack — Agent Architecture
 
-## Layers
+## Agent Layer Model
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│  FRONTEND: React + TypeScript                               │
-│  Dashboard N3/N4/Manager — drill-down 4 levels              │
+│  PRESENTATION LAYER                                         │
+│  agent/core/communication/frontend  (React + TypeScript)    │
+│  Dashboard — 4-level drill-down — real-time WebSocket       │
 ├─────────────────────────────────────────────────────────────┤
-│  BACKEND API: Go (Fiber framework)                          │
-│  REST + WebSocket — real-time counters                      │
+│  API LAYER                                                  │
+│  agent/core/communication/backend   (Go + Fiber)            │
+│  REST + WebSocket — serves frontend + module outputs        │
+├──────────────────┬──────────────────────────────────────────┤
+│  MODULES         │  GOVERNANCE                              │
+│  agent/modules/  │  agent/core/governance/                  │
+│                  │                                          │
+│  nsx-collector ──┤  HITL checkpoints                        │
+│  nsx-analyzer    │  Audit log (immutable)                   │
+│  cve-monitor     │  Permission model                        │
+│  rdm-generator   │  Session credential manager              │
+│  ...             │                                          │
+├──────────────────┴──────────────────────────────────────────┤
+│  COGNITION (Phase 1+)                                       │
+│  agent/core/cognition/                                      │
+│  LangChain + LiteLLM proxy                                  │
+│  ┌───────────────┬─────────────────┬──────────────────────┐ │
+│  │ Ollama local  │ Gemini (Vertex) │ vLLM (future)        │ │
+│  └───────────────┴─────────────────┴──────────────────────┘ │
+├──────────────────┬──────────────────────────────────────────┤
+│  PostgreSQL      │  Prometheus     │  InfluxDB 3.0          │
+│  CMDB, memory,   │  (Phase 2+)     │  (Phase 2+)            │
+│  audit log       │  short-term     │  long-term series      │
+├──────────────────┴──────────────────────────────────────────┤
+│  ACCESS LAYER                                               │
+│  agent/core/access/                                         │
+│  Token lifecycle │ SSH Key manager │ Docker Secrets (P0-3)  │
+│                                   │ HashiCorp Vault (P4+)  │
 ├─────────────────────────────────────────────────────────────┤
-│  COLLECTORS: Go (one binary per vendor)                     │
-│  Read-only API calls — no write/exec permissions            │
-│  ┌──────────────┬──────────────┬───────────────────────┐   │
-│  │ nsx-collector│ aci-collector│ paloalto-collector ... │   │
-│  └──────────────┴──────────────┴───────────────────────┘   │
-├──────────────┬──────────────────────────────────────────────┤
-│  Prometheus  │  InfluxDB 3.0  │  PostgreSQL               │
-│  (short-term │  (long-term    │  (CMDB, inventory,        │
-│   metrics)   │   time-series) │   AI logs, HITL)          │
-├──────────────┴──────────────────────────────────────────────┤
-│  AI PIPELINE: Python + LangChain + LiteLLM proxy            │
-│  ┌──────────────┬─────────────────┬──────────────────────┐ │
-│  │ Ollama local │  Gemini via API  │  vLLM (future)       │ │
-│  └──────────────┴─────────────────┴──────────────────────┘ │
+│  IDENTITY                                                   │
+│  agent/core/identity/                                       │
+│  Profile · Active modules · Capability log · Version        │
 ├─────────────────────────────────────────────────────────────┤
-│  ORCHESTRATION: n8n self-hosted (Phase 3+)                  │
+│  ORCHESTRATION (Phase 3+)                                   │
+│  n8n self-hosted — scheduled pipelines — ITSM integration   │
 ├─────────────────────────────────────────────────────────────┤
-│  SECRETS: Docker Secrets (Phase 0-3) → HashiCorp Vault (4+) │
-│  SSH Key Manager with HITL alert on failure                 │
-├─────────────────────────────────────────────────────────────┤
-│  INFRA: Docker Compose → Kubernetes (future)                │
+│  INFRA                                                      │
+│  Docker Compose (Phase 0) → Docker Swarm → Kubernetes (TBD) │
 │  Oracle Linux 9 VM                                          │
 └─────────────────────────────────────────────────────────────┘
 ```
 
-## Authentication Model
+## Authentication Flow
 
 ```
-Level 1 (default)  → API Token (read-only scope, expiry set)
-Level 2 (alt)      → SSH Key (hosts only, not REST APIs)
-Level 3 (fallback) → Operator types credential in secure input
-                     — discarded after session, never persisted
-Level 4 (lab only) → .env file — never in production
+Level 1 (default)  → API Token (read-only, expiry set, Docker Secret)
+Level 2 (alt)      → SSH Key (hosts only)
+Level 3 (fallback) → Operator session credential (RAM only, discarded)
+Level 4 (lab only) → .env — never in production
 ```
 
-## Data Flow (Phase 0)
+## Data Flow — Phase 0
 
 ```
-[NSX-T Manager API] ←── read-only token ──→ [nsx-collector (Go)]
-                                                     │
+[NSX-T Manager API] ←── read-only token ──→ [modules/nsx-collector (Go)]
+                                                       │
                                                [PostgreSQL]
-                                                     │
-                                            [Go Backend API]
-                                                     │
-                                           [React Dashboard]
+                                                       │
+                                    [core/communication/backend (Go API)]
+                                                       │
+                                    [core/communication/frontend (React)]
 ```
 
-## Secret Injection (Phase 0)
+## Module Expansion Pattern
 
 ```
-Operator runs deploy script
+New capability needed
         │
         ▼
-Script prompts for NSX API token (no echo)
+Create agent/modules/<new-module>/ from _template
         │
         ▼
-Token piped to: docker secret create nsx_api_token -
+Declare in docs/AGENT.md module registry
         │
         ▼
-Collector container reads /run/secrets/nsx_api_token
+PR review + authorization note
         │
         ▼
-Token used in-memory only — never logged, never stored
+Merge + deploy via scripts/deploy-phase<N>.sh
+        │
+        ▼
+Capability active — logged in AGENT.md expansion log
 ```

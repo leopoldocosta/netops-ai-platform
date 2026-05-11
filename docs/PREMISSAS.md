@@ -1,6 +1,6 @@
 # Premissas da Plataforma — NetOps AI Platform
 
-> **Versão:** 0.2.0  
+> **Versão:** 0.3.0  
 > **Última revisão:** 2026-05-11  
 > **Status:** Ativo
 
@@ -40,7 +40,7 @@ da sessão sem persistência de nenhum tipo.
 
 - Tokens criados com escopo mínimo necessário e data de expiração definida
 - Registrados no inventário da plataforma: nome, vendor, ambiente, validade, responsável
-- A plataforma monitora a proximidade do vencimento
+- O agente monitora a proximidade do vencimento
 - Alerta HITL disparado com antecedência configurável (padrão: **14 dias**)
 - Tokens nunca são compartilhados entre ambientes (prod, DR, lab têm tokens distintos)
 
@@ -105,8 +105,8 @@ rotação automática e auditoria completa.
 ### PG-02 — Entrega Exclusiva via Scripts de Deploy
 
 Toda ação no ambiente (instalação, configuração, atualização,
-modificação, adição de vendor) é realizada exclusivamente por meio
-de **scripts de deploy fornecidos, versionados e revisados**.
+modificação, adição de módulo ou vendor) é realizada exclusivamente
+por meio de **scripts de deploy fornecidos, versionados e revisados**.
 
 - Nenhuma ação manual avulsa é aceita fora de situação de emergência
 - Emergências são documentadas em `docs/runbooks/` após o fato
@@ -141,22 +141,25 @@ Toda integração com vendor inicia em modo estritamente leitura.
 
 ### PG-05 — Human-in-the-Loop (HITL)
 
-A plataforma **prepara, analisa e sugere**. O humano **decide e autoriza**.
+O agente **prepara, analisa e sugere**. O humano **decide e autoriza**.
 
 - Nenhuma ação de mudança em ambiente ocorre sem aprovação humana explícita
 - Análises automáticas geram recomendações, não execuções
 - Aprovações são registradas com timestamp, usuário e contexto
+- Checkpoints HITL obrigatórios para módulos com nível WRITE ou EXECUTE
 
 ---
 
-### PG-06 — Expansibilidade por Design
+### PG-06 — Arquitetura de Agente Modular
 
-Cada componente é desenhado para suportar múltiplos vendors sem reescrita.
+A plataforma é construída como um agente AI com identidade persistente,
+núcleo fixo e módulos de capacidade que se expandem sob autorização humana.
 
-- Novos vendors entram como **coletores Go independentes**
-- Interface de coletor é padronizada (ver `collectors/_template/`)
-- O core da plataforma (API, frontend, banco) não muda para adicionar vendor
-- Ordem de implementação: NSX-T → Cisco ACI → Palo Alto → Fortinet → Juniper
+- O core (identity, access, cognition, communication, governance) nunca muda sem revisão arquitetural
+- Novas capacidades entram exclusivamente como **módulos** em `agent/modules/`
+- Todo módulo deve ser registrado em `docs/AGENT.md` antes da ativação
+- Módulos têm nível de permissão declarado: READ → SUGGEST → WRITE → EXECUTE
+- A progressão de nível de permissão requer autorização explícita e documentada
 
 ---
 
@@ -184,7 +187,7 @@ Todo script de deploy deve:
 | Tipo de mudança | Incremento |
 |-----------------|------------|
 | Mudança de arquitetura, breaking change | MAJOR (X.0.0) |
-| Nova fase, novo vendor, nova feature | MINOR (0.X.0) |
+| Nova fase, novo módulo, novo vendor, nova feature | MINOR (0.X.0) |
 | Correção, ajuste, melhoria pontual | PATCH (0.0.X) |
 
 ---
@@ -193,11 +196,11 @@ Todo script de deploy deve:
 
 | Camada | Linguagem | Justificativa |
 |--------|-----------|---------------|
-| Coletores de API (vendors) | **Go** | Binários leves, concorrência nativa, sem runtime |
-| Backend API central | **Go (Fiber)** | Alta performance, baixo consumo |
-| Pipeline de IA / análise | **Python** | Ecossistema LLM exclusivo (LangChain, LlamaIndex) |
+| Módulos coletores (vendors) | **Go** | Binários leves, concorrência nativa, sem runtime |
+| Core communication — backend API | **Go (Fiber)** | Alta performance, baixo consumo |
+| Core cognition — pipeline IA | **Python** | Ecossistema LLM exclusivo (LangChain, LlamaIndex) |
 | Scripts de deploy / infra | **Bash** | Universal, sem dependências |
-| Frontend | **React + TypeScript** | Interface N3/N4/gestores |
+| Core communication — frontend | **React + TypeScript** | Interface N3/N4/gestores |
 | Orquestração (Fase 3+) | **n8n** | Workflows visuais, integração ITSM |
 
 ---
@@ -211,7 +214,7 @@ Todo script de deploy deve:
 **PP-F0-01** — Apenas 4 containers: PostgreSQL, Go API, NSX Collector, React Frontend.  
 Sem Prometheus, sem InfluxDB, sem n8n, sem LLM. Foco em funcionar.
 
-**PP-F0-02** — O coletor NSX-T usa token de API com role **Auditor** (read-only nativo do NSX-T).  
+**PP-F0-02** — O módulo nsx-collector usa token de API com role **Auditor** (read-only nativo do NSX-T).  
 Nenhuma permissão além de leitura é concedida.
 
 **PP-F0-03** — Dados coletados na Fase 0:
@@ -257,7 +260,7 @@ como backend premium. Dados enviados são anonimizados antes do envio.
 
 **PP-F2-02** — InfluxDB 3.0 OSS para séries temporais de longo prazo (30/90/365 dias).
 
-**PP-F2-03** — PostgreSQL permanece como CMDB e armazenamento de análises da IA.
+**PP-F2-03** — PostgreSQL permanece como CMDB e armazenamento de análises do agente.
 
 ---
 
@@ -279,15 +282,16 @@ como backend premium. Dados enviados são anonimizados antes do envio.
 
 ---
 
-### Vendors
+### Módulos
 
-**PP-VD-01** — Cada novo vendor entra com seu próprio coletor Go independente.
+**PP-MD-01** — Cada nova capacidade entra como módulo independente em `agent/modules/`.
 
-**PP-VD-02** — Interface obrigatória de todo coletor (ver `collectors/_template/`):  
-`GET /health`, `GET /version`, `GET /alerts`, push para PostgreSQL.
+**PP-MD-02** — Interface obrigatória de todo módulo (ver `agent/modules/_template/`):  
+`GET /health`, dados relevantes ao domínio, push para PostgreSQL.
 
-**PP-VD-03** — Antes de adicionar vendor novo, o coletor anterior deve estar  
-estável em produção por no mínimo **30 dias**.
+**PP-MD-03** — Antes de ativar módulo de nível WRITE ou superior,  
+o ambiente deve ter todos os módulos READ do mesmo vendor  
+estáveis em produção por no mínimo **30 dias**.
 
-**PP-VD-04** — Token do novo vendor: escopo mínimo read-only, expiração definida,  
-registrado no inventário antes do primeiro deploy.
+**PP-MD-04** — Token do novo vendor: escopo mínimo read-only, expiração definida,  
+registrado no inventário e em `docs/AGENT.md` antes do primeiro deploy.

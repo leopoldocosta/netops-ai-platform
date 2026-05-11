@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ============================================================
-# NetOps AI Platform — Teardown Script Phase 0
+# NetOps AI Platform — Teardown Phase 0
 # Remove stack, secrets e volumes (USE COM CUIDADO)
 # Usage: bash scripts/teardown-phase0.sh
 # ============================================================

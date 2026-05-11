@@ -1,9 +1,12 @@
 # ============================================================
 # NetOps AI Platform — Phase 0
-# Containers: PostgreSQL + Go API + NSX Collector + React Frontend
+# Containers: PostgreSQL + Go API (communication) + NSX Collector + React Frontend
 #
-# Run:   docker compose -f docker-compose.phase0.yml up -d
-# Stop:  docker compose -f docker-compose.phase0.yml down
+# Agent modules active: nsx-collector
+# Agent core active: identity, access, communication
+#
+# Run:   docker stack deploy -c infra/docker/docker-compose.phase0.yml netops
+# Stop:  docker stack rm netops
 #
 # Secrets: injected via Docker Secrets (see scripts/deploy-phase0.sh)
 # NO credentials in .env — tokens via Docker Secrets only
@@ -33,9 +36,10 @@ services:
       timeout: 5s
       retries: 5
 
+  # Module: nsx-collector (READ permission — no write ops)
   nsx-collector:
     build:
-      context: ../../collectors/nsx
+      context: ../../agent/modules/nsx-collector
       dockerfile: Dockerfile
     restart: unless-stopped
     environment:
@@ -56,9 +60,10 @@ services:
       - netops-internal
       - netops-external
 
+  # Core: communication/backend
   backend-api:
     build:
-      context: ../../backend
+      context: ../../agent/core/communication/backend
       dockerfile: Dockerfile
     restart: unless-stopped
     ports:
@@ -78,9 +83,10 @@ services:
     networks:
       - netops-internal
 
+  # Core: communication/frontend
   frontend:
     build:
-      context: ../../frontend
+      context: ../../agent/core/communication/frontend
       dockerfile: Dockerfile
       args:
         REACT_APP_API_URL: ${REACT_APP_API_URL}
